@@ -15,7 +15,7 @@ class OchecklistAPIView(APIView):
     permission_classes = []
 
     def get(self, request):
-        api_key = request.headers.get('Race-Api-Key')  
+        api_key = (request.headers.get('Key') or '').strip().lower() 
         qs = None
 
         if is_manager(request.user):
