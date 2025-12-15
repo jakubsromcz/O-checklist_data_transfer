@@ -1,5 +1,6 @@
 
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 class Account(models.model):
 
@@ -47,23 +48,31 @@ class Race(models.Model):
 
 class OchecklistStore(models.Model):
 
+    class StatusType(models.TextChoices):
+        OK = 'OK', _('OK')
+        LATE = 'LATE', _('Pozdní start')
+        DNS = 'DNS', _('Nestartoval')
+
     race                        = models.ForeignKey(Race, on_delete=models.SET_NULL, blank=True, null=True)
     racecieved_api_key          = models.CharField(max_length=50, blank=True, null=True)
 
     competitor_index            = models.CharField(max_length=7, blank=True)
-    new_si_number               = models.PositiveIntegerField(blank=False)
-    old_si_number               = models.PositiveIntegerField(blank=False)
+    new_si_number               = models.PositiveIntegerField(blank=True, null=True)
+    old_si_number               = models.PositiveIntegerField(blank=True, null=True)
+    competitor_status           = models.CharField(max_length=4, choices=StatusType.choices, blank=True, default="")
     competitor_start_number     = models.PositiveIntegerField(blank=True, null=True)
     competitor_full_name        = models.CharField(max_length=40, blank=True)
-    competitor_club             = models.CharField(max_length=40, blank=True)
+    competitor_club             = models.CharField(max_length=80, blank=True)
     competitor_start_time       = models.DateTimeField(blank=False, null=True)  
     competitor_category_name    = models.CharField(max_length=30, blank=True)
-    comment                     = models.CharField(max_length=100, blank=True)
+    comment                     = models.CharField(max_length=200, blank=True)
     time_changes                = models.DateTimeField(blank=False, null=True)
     timestamp                   = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.race.race_name} - {self.competitor_full_name} {self.competitor_category_name} - { self.comment}"
+    
+
     
 
 

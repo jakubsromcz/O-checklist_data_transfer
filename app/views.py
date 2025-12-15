@@ -39,6 +39,7 @@ class OchecklistAPIView(APIView):
                 'race_id': o.race_id,
                 'race_name': r.race_name if r else None,
                 'event_name': r.event.event_name if (r and r.event_id) else None,
+                'competitor_status': o.competitor_status,
                 'competitor_index': o.competitor_index,
                 'competitor_old_si_number': o.old_si_number,
                 'competitor_new_si_number': o.new_si_number,
@@ -125,6 +126,18 @@ class OchecklistAPIView(APIView):
             # = UTC, no time convert
             return naive_wall.replace(tzinfo=dt_timezone.utc)
 
+        def map_start_status(raw):
+            if not raw:
+                return ""
+            s = str(raw).strip().lower()
+            if s == "started ok":
+                return OchecklistStore.StatusType.OK
+            if s == "late start":
+                return OchecklistStore.StatusType.LATE
+            if s == "dns":
+                return OchecklistStore.StatusType.DNS
+            return ""
+
         doc = _yaml_fallback_parse(raw)
         data = (doc or {}).get('Data')
         if not isinstance(data, list):
@@ -152,6 +165,7 @@ class OchecklistAPIView(APIView):
 
                 try:
                     competitor_index         = (runner.get('Id') or '').strip()
+                    competitor_status        = map_start_status(runner.get('StartStatus'))
                     new_si_number            = to_int(runner.get('NewCard'))
                     old_si_number            = to_int(runner.get('Card'))
                     start_number             = to_int(runner.get('Bib'))
@@ -163,18 +177,20 @@ class OchecklistAPIView(APIView):
                     # >>> ONLY start_time “wall-clock preserve” <<<
                     start_time = wallclock_to_utc_same_clock(runner.get('StartTime'))
 
-                    # Other times as usual:
-                    ch_new     = parse_iso(changelog.get('NewCard'))
-                    ch_comm    = parse_iso(changelog.get('Comment'))
-                    time_changes = ch_new or ch_comm
+                    # Other times as usual
+                    ts_candidates = []
+                    for k in ('NewCard', 'Comment', 'LateStart', 'DNS'):
+                        val = parse_iso(changelog.get(k))
+                        if val is not None:
+                            ts_candidates.append(val)
+
+                    time_changes = max(ts_candidates) if ts_candidates else None
+                    # No time in ChangeLog = no change -> resume
                     if time_changes is None:
-                        # no time_changes → continue
-                        raise ValueError("Missing ChangeLog time (NewCard/Comment).")
+                        skipped += 1
+                        continue
 
-                    if new_si_number is None or old_si_number is None:
-                        raise ValueError("Missing NewCard or Card number.")
-
-                    # DEDUP due time_changes (a race/null)
+                    # DEDUP by time_changes (a race/null)
                     dup_filter = {'time_changes': time_changes}
                     if race is not None:
                         dup_filter['race'] = race
@@ -190,19 +206,31 @@ class OchecklistAPIView(APIView):
                         competitor_index = competitor_index[:7],
                         new_si_number = new_si_number,
                         old_si_number = old_si_number,
+                        competitor_status = competitor_status,
                         competitor_start_number = start_number,
                         competitor_full_name = full_name,
                         competitor_club = club,
                         competitor_category_name = class_name,
                         comment = comment,
-                        competitor_start_time = start_time,  # save 10:05:00Z (same time, no UTC convert)
+                        competitor_start_time = start_time,  # save 10:05:00Z 
                         time_changes = time_changes,
                     ))
                 except Exception as e:
                     errors.append({'row': i, 'error': str(e)})
 
-            if not to_create and (errors or skipped):
-                return Response({'status': 'error', 'saved': 0, 'skipped': skipped, 'errors': errors}, status=status.HTTP_200_OK)
+            if not to_create:
+                if errors:
+                    # something faild
+                    return Response(
+                        {'status': 'error', 'saved': 0, 'skipped': skipped, 'errors': errors},
+                        status=status.HTTP_200_OK
+                    )
+                else:
+                    # nothing to save, but everything went OK
+                    return Response(
+                        {'status': 'pass', 'saved': 0, 'skipped': skipped, 'errors': []},
+                        status=status.HTTP_200_OK
+                    )
 
             OchecklistStore.objects.bulk_create(to_create, batch_size=500)
 

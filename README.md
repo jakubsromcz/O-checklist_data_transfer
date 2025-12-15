@@ -20,6 +20,7 @@ https://rob-is.cz/api/ochecklist/
       "race_id": 520,
       "race_name": "MČR 144 MHz",
       "event_name": "Bílovické krpály 2025",
+      "competitor_status": "DNS",
       "competitor_index": "GAP7755",
       "competitor_old_si_number": 1775519,
       "competitor_new_si_number": 6658,
